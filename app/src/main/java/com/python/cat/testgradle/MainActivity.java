@@ -1,402 +1,344 @@
 package com.python.cat.testgradle;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.hardware.Camera;
-import android.net.DhcpInfo;
-import android.net.wifi.WifiManager;
+import android.graphics.ImageFormat;
+import android.graphics.SurfaceTexture;
+import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CameraMetadata;
+import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.Image;
+import android.media.ImageReader;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.support.v4.app.ActivityCompat;
+import android.util.Log;
+import android.util.Size;
+import android.util.SparseIntArray;
+import android.view.Surface;
+import android.view.TextureView;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.Toast;
+import android.widget.Button;
 
 import com.apkfuns.logutils.LogUtils;
-import com.google.zxing.BinaryBitmap;
-import com.google.zxing.ChecksumException;
-import com.google.zxing.FormatException;
-import com.google.zxing.NotFoundException;
-import com.google.zxing.RGBLuminanceSource;
-import com.google.zxing.Result;
-import com.google.zxing.common.GlobalHistogramBinarizer;
-import com.google.zxing.qrcode.QRCodeReader;
-import com.python.cat.testgradle.utils.QRCodeUtil;
+import com.yanzhenjie.permission.Action;
+import com.yanzhenjie.permission.AndPermission;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
 
-
+/**
+ * from: http://coderzpassion.com/android-working-camera2-api/
+ */
 public class MainActivity extends Activity {
-
-
-    public static android.os.Handler mHandler;
-
-    public static final int REQUEST_CAMERA = 12;
 
     private Activity get() {
         return this;
     }
 
-    private ImageView img;
-    private View btn;
-    private ViewGroup rootLayout;
-    private FrameLayout prevLayout;
+    private Size previewsize;
+    private Size jpegSizes[] = null;
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
+    private TextureView textureView;
+    private CameraDevice cameraDevice;
+    private CaptureRequest.Builder previewBuilder;
+    private CameraCaptureSession previewSession;
+    Button getpicture;
+
+    private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
+
+    static {
+        ORIENTATIONS.append(Surface.ROTATION_0, 90);
+        ORIENTATIONS.append(Surface.ROTATION_90, 0);
+        ORIENTATIONS.append(Surface.ROTATION_180, 270);
+        ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-//        String s = Flowable.class.toString();
         setContentView(R.layout.activity_main);
-        rootLayout = findViewById(R.id.main_root_view);
-        img = findViewById(R.id.zx_img);
-        btn = findViewById(R.id.btn_create_zx);
-        prevLayout = findViewById(R.id.prev_view);
+        textureView = (TextureView) findViewById(R.id.textureview);
+        textureView.setSurfaceTextureListener(surfaceTextureListener);
 
-        LogUtils.w("");
-
-        WifiManager wifiManager = (WifiManager) getSystemService(Context.WIFI_SERVICE);
-        assert wifiManager != null;
-        DhcpInfo dhcpInfo = wifiManager.getDhcpInfo();
-        LogUtils.w(dhcpInfo);
-        // ipaddr 172.20.161.205
-        // gateway 172.20.160.1
-        // netmask 255.255.254.0
-        // dns1 172.16.2.15
-        // dns2 172.16.2.16
-        // DHCP server 172.20.160.1
-        // lease 14400 seconds
-        int ip = dhcpInfo.serverAddress;
-
-        //此处获取ip为整数类型，需要进行转换
-        final String strIp = intToIp(ip); // 172.20.160.1 ip --->< 27268268
-        LogUtils.w(strIp + " ip --->< " + ip);
-
-
-        btn.setOnClickListener(new View.OnClickListener() {
+        getpicture = (Button) findViewById(R.id.getpicture);
+        getpicture.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String path = new File(getCacheDir(), "zx.jpg").getAbsolutePath();
-                String content = "ip==" + strIp;
-                LogUtils.i("src info==" + content);
-                boolean qr = QRCodeUtil.createQRImage(content, img.getWidth(), img.getHeight(), null,
-                        path);
-                LogUtils.w("生成二维码：" + qr);
-                Bitmap bitmap = BitmapFactory.decodeFile(path);
-                img.setImageBitmap(bitmap);
-
+                getPicture();
             }
         });
+    }
 
-        findViewById(R.id.btn_scan_zx)
-                .setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        LogUtils.w("扫描二维码");
-//                        Intent intent = new Intent(MainActivity.this, CaptureActivity.class);
-//                        startActivityForResult(intent, REQ_QR_CODE);
+    void getPicture() {
+        if (cameraDevice == null) {
+            return;
+        }
+        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
 
-//                        ################### todo: 使用开源库的效果：
-//                        Intent intent = new Intent(MainActivity.this, CaptureActivity.class);
-//                        ZxingConfig config = new ZxingConfig();
-//                        config.setPlayBeep(false);//是否播放扫描声音 默认为true
-//                        config.setShake(false);//是否震动  默认为true
-////                        config.setDecodeBarCode(false);//是否扫描条形码 默认为true
-//                        intent.putExtra(Constant.INTENT_ZXING_CONFIG, config);
-//                        startActivityForResult(intent, REQUEST_CAMERA);
+        try {
+            CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraDevice.getId());
+            if (characteristics != null) {
+                jpegSizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP).getOutputSizes(ImageFormat.JPEG);
+            }
+            int width = 640, height = 480;
+            if (jpegSizes != null && jpegSizes.length > 0) {
+                width = jpegSizes[0].getWidth();
+                height = jpegSizes[0].getHeight();
+            }
+            ImageReader reader = ImageReader.newInstance(width, height, ImageFormat.JPEG, 1);
+            List<Surface> outputSurfaces = new ArrayList<Surface>(2);
+            outputSurfaces.add(reader.getSurface());
+            outputSurfaces.add(new Surface(textureView.getSurfaceTexture()));
 
-//                        ################### // end -- 开源库-实现扫码
+            final CaptureRequest.Builder capturebuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            capturebuilder.addTarget(reader.getSurface());
+            capturebuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
 
-//                        parseOriginZX();
+            int rotation = getWindowManager().getDefaultDisplay().getRotation();
+            capturebuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
 
-                        // ok ... ok ... UseCameraActivity --> 自定义 surfaceView 实现扫码
-//                        startActivity(new Intent(get(), UseCameraActivity.class));
+            ImageReader.OnImageAvailableListener imageAvailableListener = new ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(ImageReader reader) {
+                    Image image = null;
+                    try {
+                        image = reader.acquireLatestImage();
+                        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+                        byte[] bytes = new byte[buffer.capacity()];
+                        buffer.get(bytes);
+                        save(bytes);
+                    } catch (Exception ee) {
 
-                        // 试试 camera2 的 api
-                        startActivity(new Intent(get(), AndroidCameraApi.class));
+                    } finally {
+                        if (image != null)
+                            image.close();
+                    }
+                }
+
+                void save(byte[] bytes) {
+                    File file12 = getOutputMediaFile();
+                    OutputStream outputStream = null;
+                    try {
+                        outputStream = new FileOutputStream(file12);
+                        outputStream.write(bytes);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    } finally {
+                        try {
+                            if (outputStream != null)
+                                outputStream.close();
+                        } catch (Exception e) {
+                        }
+                    }
+                }
+            };
+
+            HandlerThread handlerThread = new HandlerThread("takepicture");
+            handlerThread.start();
+
+            final Handler handler = new Handler(handlerThread.getLooper());
+            reader.setOnImageAvailableListener(imageAvailableListener, handler);
+
+            final CameraCaptureSession.CaptureCallback previewSSession = new CameraCaptureSession.CaptureCallback() {
+                @Override
+                public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
+                    super.onCaptureStarted(session, request, timestamp, frameNumber);
+                }
+
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+                    startCamera();
+                }
+            };
+
+            cameraDevice.createCaptureSession(outputSurfaces, new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(CameraCaptureSession session) {
+
+                    try {
+                        session.capture(capturebuilder.build(), previewSSession, handler);
+
+                    } catch (Exception e) {
 
                     }
-                });
+                }
 
-    }
+                @Override
+                public void onConfigureFailed(CameraCaptureSession session) {
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
+                }
+            }, handler);
+        } catch (Exception e) {
 
-        LogUtils.e(requestCode + " ... " + resultCode);
-        LogUtils.w(data);
-    }
-
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        LogUtils.w(requestCode + " ， " + Arrays.toString(permissions) + " xx " + Arrays.toString(grantResults));
-        switch (requestCode) {
-            case REQUEST_CAMERA:
-                LogUtils.i("request  camera...");
-                take();
-//                cameraPreview.takePicture(runnable, mPicture);
-                break;
         }
     }
 
-    private void take() {
-        rootLayout.removeAllViews();
-        ScanView scanView = new ScanView(this);
-        rootLayout.addView(scanView);
+    public void openCamera() {
+        AndPermission.with(this)
+                .permission(Manifest.permission.CAMERA)
+                .onGranted(new Action() {
+                    @Override
+                    public void onAction(List<String> permissions) {
+                        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+                        try {
+                            String camerId = manager.getCameraIdList()[0];
+                            CameraCharacteristics characteristics = manager.getCameraCharacteristics(camerId);
+                            StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                            previewsize = map.getOutputSizes(SurfaceTexture.class)[0];
+                            if (ActivityCompat.checkSelfPermission(get(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                LogUtils.e("permission denied");
+                                return;
+                            }
+                            manager.openCamera(camerId, stateCallback, null);
+                        } catch (Exception e) {
+                            LogUtils.e(e);
+                        }
+                    }
+                })
+                .onDenied(new Action() {
+                    @Override
+                    public void onAction(List<String> permissions) {
+                        LogUtils.e("permission denied");
+                    }
+                }).start();
+
     }
 
-    /**
-     * https://developer.android.google.cn/guide/topics/media/camera#custom-camera
-     */
-    private Camera.PictureCallback mPicture = new Camera.PictureCallback() {
+    private TextureView.SurfaceTextureListener surfaceTextureListener = new TextureView.SurfaceTextureListener() {
+        @Override
+        public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+            openCamera();
+        }
 
         @Override
-        public void onPictureTaken(byte[] data, Camera camera) {
+        public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
 
-            LogUtils.w("----------data-----------------");
-            camera.startPreview();
-//            File pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE);
-            File pictureFile = getOutputMediaFile();
-            if (pictureFile == null) {
-                LogUtils.e("Error creating media file, check storage permissions: " +
-                        null);
-                return;
-            }
+        }
 
-            try {
-                LogUtils.d(data);
-                FileOutputStream fos = new FileOutputStream(pictureFile);
-                fos.write(data);
-                fos.close();
-                LogUtils.w("complete###!!!");
-            } catch (FileNotFoundException e) {
-                LogUtils.e("File not found: " + e.getMessage());
-            } catch (IOException e) {
-                LogUtils.e("Error accessing file: " + e.getMessage());
-            }
+        @Override
+        public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+            return false;
+        }
+
+        @Override
+        public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+
+        }
+    };
+    private CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
+        @Override
+        public void onOpened(CameraDevice camera) {
+            cameraDevice = camera;
+            startCamera();
+        }
+
+        @Override
+        public void onDisconnected(CameraDevice camera) {
+
+        }
+
+        @Override
+        public void onError(CameraDevice camera, int error) {
+
         }
     };
 
-    private static File getOutputMediaFile() {
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (cameraDevice != null) {
+            cameraDevice.close();
 
-
-        return null;
-    }
-
-
-    /**
-     * Check if this device has a camera
-     */
-    private boolean checkCameraHardware(Context context) {
-        if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA)) {
-            // this device has a camera
-            LogUtils.w("has camera...");
-            return true;
-        } else {
-            // no camera on this device
-            LogUtils.w("has no camera...");
-            return false;
         }
     }
 
-
-    /**
-     * 解析自己生成的二维码图片
-     */
-    private void parseOriginZX() {
-        String path = new File(getCacheDir(), "zx.jpg").getAbsolutePath();
-        Bitmap bitmap = BitmapFactory.decodeFile(path);
-        Result result = parseInfoFromBitmap(bitmap);
-        if (result != null) {
-            LogUtils.w(result);
-            LogUtils.i("result info==" + result.getText());
+    void startCamera() {
+        if (cameraDevice == null || !textureView.isAvailable() || previewsize == null) {
+            return;
         }
-    }
 
-    private String intToIp(int i) {
-        return (i & 0xFF) + "." + ((i >> 8) & 0xFF) + "." + ((i >> 16) & 0xFF) + "."
-                + ((i >> 24) & 0xFF);
-    }
+        SurfaceTexture texture = textureView.getSurfaceTexture();
+        if (texture == null) {
+            return;
+        }
 
+        texture.setDefaultBufferSize(previewsize.getWidth(), previewsize.getHeight());
+        Surface surface = new Surface(texture);
 
-    public Result parseInfoFromBitmap(Bitmap bitmap) {
-        int[] pixels = new int[bitmap.getWidth() * bitmap.getHeight()];
-        bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0, bitmap.getWidth(), bitmap.getHeight());
-        LogUtils.w("### pixels dest==" + Arrays.toString(pixels));
-
-        RGBLuminanceSource source = new RGBLuminanceSource(bitmap.getWidth(),
-                bitmap.getHeight(), pixels);
-        GlobalHistogramBinarizer binarizer = new GlobalHistogramBinarizer(source);
-        BinaryBitmap image = new BinaryBitmap(binarizer);
-        Result result = null;
         try {
-            result = new QRCodeReader().decode(image);
-            return result;
-        } catch (NotFoundException e) {
-            e.printStackTrace();
-        } catch (ChecksumException e) {
-            LogUtils.v(e);
-            e.printStackTrace();
-        } catch (FormatException e) {
-            LogUtils.d(e);
-            e.printStackTrace();
+            previewBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+        } catch (Exception e) {
         }
+        previewBuilder.addTarget(surface);
+        try {
+            cameraDevice.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(CameraCaptureSession session) {
+                    previewSession = session;
+                    getChangedPreview();
+                }
 
-        return null;
+                @Override
+                public void onConfigureFailed(CameraCaptureSession session) {
 
-    }
-
-
-    static class ScanView extends SurfaceView implements SurfaceHolder.Callback,
-            Camera.AutoFocusCallback {
-        private Camera mCamera;
-        private final File fileImg;
-
-        public ScanView(Context context) {
-            super(context);
-            fileImg = new File(context.getCacheDir(), "prev_view.jpg");
-            SurfaceHolder mHolder = getHolder();
-            mHolder.addCallback(this);
-            // deprecated setting, but required on Android versions prior to 3.0
-            mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-        }
-
-        @Override
-        public void onAutoFocus(boolean success, Camera camera) {
-            LogUtils.w("auto focus..." + success);
-            if (mCamera != null) {
-                mCamera.takePicture(null, null, null, new Camera.PictureCallback() {
-                    @Override
-                    public void onPictureTaken(byte[] data, Camera camera) {
-
-                        mCamera.cancelAutoFocus();
-                        mCamera.stopPreview(); // 拿到数据就停止！！！
-                        LogUtils.w("========data========");
-                        LogUtils.w("----------data-----------------");
-                        camera.startPreview();
-//            File pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE);
-                        File pictureFile = fileImg;
-                        if (pictureFile == null) {
-                            LogUtils.e("Error creating media file, check storage permissions: " +
-                                    null);
-                            return;
-                        }
-
-                        if (data == null) {
-                            return;
-                        }
-                        try {
-                            LogUtils.d(data);
-                            FileOutputStream fos = new FileOutputStream(pictureFile);
-                            fos.write(data);
-                            fos.close();
-                            LogUtils.e("save preview complete###!!!");
-                            LogUtils.e("save preview complete###!!!");
-                            LogUtils.e("save preview complete###!!!" + pictureFile);
-                            BitmapFactory.Options options = new BitmapFactory.Options();
-                            options.inJustDecodeBounds = true;
-                            BitmapFactory.decodeFile(pictureFile.getAbsolutePath(), options);
-                            options.inJustDecodeBounds = false;
-                            int outWidth = options.outWidth;
-                            int outHeight = options.outHeight;
-                            if (outWidth >= getWidth() * 2) {
-                                options.inSampleSize = outWidth / getWidth();
-                            }
-                            if (outHeight >= getHeight() * 2) {
-                                options.inSampleSize = outHeight / getHeight();
-                            }
-                            Bitmap bmp = BitmapFactory.decodeFile(pictureFile.getAbsolutePath(), options);
-
-                            Result result = parseInfoFromBitmap(bmp);
-                            Toast.makeText(getContext(), "INFO:" + result.getText(), Toast.LENGTH_SHORT).show();
-                            LogUtils.w("解析成功：" + result);
-                        } catch (Exception e) {
-                            LogUtils.e("Error accessing file: " + e.getMessage());
-                        }
-                    }
-                });
-            }
-        }
-
-        public Result parseInfoFromBitmap(Bitmap bitmap) {
-            int[] pixels = new int[bitmap.getWidth() * bitmap.getHeight()];
-            bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0, bitmap.getWidth(), bitmap.getHeight());
-            LogUtils.w("### pixels dest==" + Arrays.toString(pixels));
-
-            RGBLuminanceSource source = new RGBLuminanceSource(bitmap.getWidth(),
-                    bitmap.getHeight(), pixels);
-            GlobalHistogramBinarizer binarizer = new GlobalHistogramBinarizer(source);
-            BinaryBitmap image = new BinaryBitmap(binarizer);
-            Result result = null;
-            try {
-                result = new QRCodeReader().decode(image);
-                return result;
-            } catch (NotFoundException e) {
-                e.printStackTrace();
-                Toast.makeText(getContext(), "非二维码图片，不能解析", Toast.LENGTH_SHORT).show();
-            } catch (ChecksumException e) {
-                e.printStackTrace();
-            } catch (FormatException e) {
-                e.printStackTrace();
-            }
-
-            return null;
-
-        }
-
-        @Override
-        public void surfaceCreated(SurfaceHolder holder) {
-            LogUtils.e("x surfaceCreated.. #####");
-
-            try {
-                mCamera = Camera.open();
-                mCamera.setPreviewDisplay(holder);
-                mCamera.setDisplayOrientation(90);
-                Camera.Parameters parameters = mCamera.getParameters();
-                parameters.setPictureSize(1600, 1200);
-                parameters.setPreviewSize(640, 480);
-                mCamera.startPreview();
-                mCamera.autoFocus(this);
-                LogUtils.e("surfaceCreated.. #####");
-
-            } catch (IOException e) {
-                LogUtils.e("Error setting camera preview: " + e.getMessage());
-            }
-        }
-
-        @Override
-        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-
-        }
-
-        @Override
-        public void surfaceDestroyed(SurfaceHolder holder) {
+                }
+            }, null);
+        } catch (Exception e) {
 
         }
     }
 
+    void getChangedPreview() {
+        if (cameraDevice == null) {
+            return;
+        }
+        previewBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+        HandlerThread thread = new HandlerThread("changed Preview");
+        thread.start();
+        Handler handler = new Handler(thread.getLooper());
+        try {
+            previewSession.setRepeatingRequest(previewBuilder.build(), null, handler);
+        } catch (Exception e) {
+        }
+    }
 
+
+    private static File getOutputMediaFile() {
+        File mediaStorageDir = new File(
+                Environment
+                        .getExternalStorageDirectory(),
+                "MyCameraApp");
+        if (!mediaStorageDir.exists()) {
+            if (!mediaStorageDir.mkdirs()) {
+                Log.d("MyCameraApp", "failed to create directory");
+                return null;
+            }
+        }
+        // Create a media file name
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss")
+                .format(new Date());
+        File mediaFile;
+        mediaFile = new File(mediaStorageDir.getPath() + File.separator
+                + "IMG_" + timeStamp + ".jpg");
+
+        return mediaFile;
+    }
 }
-/*
-1. 获取自己的 ip , serverIp 等信息。[已完成]
-2. 然后生成一个二维码（包含这些信息）[已完成]
-3. 另一个设备扫描二维码，然后得到我的ip 等信息
- */

@@ -131,6 +131,8 @@ public class AndroidCameraApi extends Activity {
             cameraDevice.close();
         }
 
+
+
         @Override
         public void onError(@NonNull CameraDevice camera, int error) {
             cameraDevice.close();

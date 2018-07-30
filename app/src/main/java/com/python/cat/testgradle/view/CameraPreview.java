@@ -2,12 +2,11 @@ package com.python.cat.testgradle.view;
 
 import android.content.Context;
 import android.hardware.Camera;
-import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 import com.apkfuns.logutils.LogUtils;
-import com.python.cat.testgradle.MainActivity;
+import com.python.cat.testgradle.MainOriginActivity;
 
 import java.io.IOException;
 
@@ -52,8 +51,8 @@ public class CameraPreview extends SurfaceView
             mCamera.startPreview();
             mCamera.autoFocus(this);
             LogUtils.e("surfaceCreated.. #####");
-            if (MainActivity.mHandler != null) {
-                MainActivity.mHandler.sendEmptyMessage(123);
+            if (MainOriginActivity.mHandler != null) {
+                MainOriginActivity.mHandler.sendEmptyMessage(123);
             }
         } catch (IOException e) {
             LogUtils.e("Error setting camera preview: " + e.getMessage());
