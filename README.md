@@ -200,3 +200,5 @@ public class UseCameraActivity extends Activity {
 没有了。另外，代码里用的`api`是`Camera`的`api`，已经过时了，虽然可以继续使用。但是官方不建议了，后续有时间会去尝试`Camera2`。
 
 ---- end ---
+
+更详细的介绍：[戳一下试试...](https://blog.csdn.net/DucklikeJAVA/article/details/81288624)
