@@ -125,7 +125,11 @@ public class MainActivity extends Activity {
 //                        parseOriginZX();
 
                         // ok ... ok ... UseCameraActivity --> 自定义 surfaceView 实现扫码
-                        startActivity(new Intent(get(), UseCameraActivity.class));
+//                        startActivity(new Intent(get(), UseCameraActivity.class));
+
+                        // 试试 camera2 的 api
+                        startActivity(new Intent(get(), AndroidCameraApi.class));
+
                     }
                 });
 
