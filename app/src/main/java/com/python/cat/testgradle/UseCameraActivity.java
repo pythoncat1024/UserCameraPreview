@@ -214,4 +214,8 @@ public class UseCameraActivity extends Activity {
             }
         }
     }
+
+    // ----------------
+
+
 }
